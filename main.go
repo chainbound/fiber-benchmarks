@@ -130,6 +130,7 @@ func runBloxroute(endpoint, key string, done chan bool) error {
 
 func runFiber(endpoint, key string, done chan bool) error {
 	c := fiber.NewClient(endpoint, key)
+	defer c.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
