@@ -42,13 +42,20 @@ func main() {
 
 	fmt.Println("Running benchmark for", duration, "...")
 
+	done := make(chan bool)
+
 	go func() {
-		if err := runBloxroute(blxrEndpoint, blxrKey); err != nil {
+		<-time.After(duration)
+		close(done)
+	}()
+
+	go func() {
+		if err := runBloxroute(blxrEndpoint, blxrKey, done); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
-	if err := runFiber(fiberEndpoint, fiberKey, duration); err != nil {
+	if err := runFiber(fiberEndpoint, fiberKey, done); err != nil {
 		log.Fatal(err)
 	}
 
@@ -88,7 +95,7 @@ type BlxrMsg struct {
 	}
 }
 
-func runBloxroute(endpoint, key string) error {
+func runBloxroute(endpoint, key string, done chan bool) error {
 	dialer := websocket.DefaultDialer
 	sub, _, err := dialer.Dial(endpoint, http.Header{"Authorization": []string{key}})
 	if err != nil {
@@ -103,6 +110,11 @@ func runBloxroute(endpoint, key string) error {
 	}
 
 	for {
+		select {
+		case <-done:
+			return nil
+		default:
+		}
 		var decoded BlxrMsg
 		_, msg, err := sub.ReadMessage()
 		if err != nil {
@@ -116,7 +128,7 @@ func runBloxroute(endpoint, key string) error {
 	}
 }
 
-func runFiber(endpoint, key string, duration time.Duration) error {
+func runFiber(endpoint, key string, done chan bool) error {
 	c := fiber.NewClient(endpoint, key)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
@@ -130,10 +142,9 @@ func runFiber(endpoint, key string, duration time.Duration) error {
 
 	go c.SubscribeNewTxs(nil, sub)
 
-	timer := time.After(duration)
 	for tx := range sub {
 		select {
-		case <-timer:
+		case <-done:
 			return nil
 		default:
 		}
