@@ -60,6 +60,9 @@ func main() {
 	fiberWon := 0
 	blxrWon := 0
 
+	// Wait for both goroutines to exit
+	time.Sleep(time.Second)
+
 	for fh, fts := range fiberMap {
 		for bh, bts := range blxrMap {
 			if fh == bh {
