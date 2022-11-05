@@ -16,13 +16,20 @@ which it will print out the results of the benchmarks.
 
 Example output:
 ```
-Running benchmark for 2m0s ...
+Running benchmark for 10m0s ...
 Bloxroute endpoint: wss://uk.eth.blxrbdn.com/ws
 Fiber endpoint: fiberapi.io:8080
-Fiber was 64ms faster on average
-Fiber won 623
-Bloxroute won 545
-Fiber won 53.34% of the time
+
+
+========== STATS =============
+Mean difference: 174.61ms
+Median difference: 2.00ms
+Max difference: 335986.00ms
+Min difference: -3713.00ms
+Stdev: 6159.43ms
+
+========== RESULT =============
+Fiber won 56.79% of the time
 ```
 It will also write all the individual transactions to `benchmarks.csv`, along with the difference in ms.
 Positive means Fiber was faster.
