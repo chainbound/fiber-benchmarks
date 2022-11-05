@@ -170,10 +170,10 @@ func runBloxroute(ctx context.Context, endpoint, key string) error {
 			log.Println(err)
 		}
 
-		hash := decoded.Params.Result.TxHash
 		ts := time.Now().UnixMilli()
 
 		json.Unmarshal(msg, &decoded)
+		hash := decoded.Params.Result.TxHash
 
 		if _, ok := blxrMap[hash]; !ok {
 			blxrMap[hash] = ts
