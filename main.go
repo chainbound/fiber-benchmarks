@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
+	"github.com/montanaflynn/stats"
 )
 
 var blxrMap = make(map[common.Hash]int64, 10000)
@@ -79,6 +80,8 @@ func main() {
 
 	w.Write([]string{"txHash", "diff"})
 
+	var diffs []float64
+
 	for fh, fts := range fiberMap {
 		for bh, bts := range blxrMap {
 			if fh == bh {
@@ -90,16 +93,46 @@ func main() {
 				}
 
 				w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
+				diffs = append(diffs, float64(diff))
 				sum += diff
 				entries++
 			}
 		}
 	}
 
-	fmt.Printf("Fiber was %dms faster on average\n", sum/entries)
-	fmt.Println("Fiber won", fiberWon)
-	fmt.Println("Bloxroute won", blxrWon)
+	mean, err := stats.Mean(diffs)
+	if err != nil {
+		log.Fatal(err)
+	}
+	max, err := stats.Max(diffs)
+	if err != nil {
+		log.Fatal(err)
+	}
+	min, err := stats.Min(diffs)
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	median, err := stats.Median(diffs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	std, err := stats.StandardDeviation(diffs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println()
+	fmt.Println("========== STATS =============")
+	fmt.Printf("Mean difference: %.2fms\n", mean)
+	fmt.Printf("Median difference: %.2fms\n", median)
+	fmt.Printf("Max difference: %.2fms\n", max)
+	fmt.Printf("Min difference: %.2fms\n", min)
+	fmt.Printf("Stdev: %.2fms\n", std)
+
+	fmt.Println()
+	fmt.Println("========== RESULT =============")
 	fmt.Printf("Fiber won %.2f%% of the time\n", float64(fiberWon)/float64(entries)*100)
 }
 

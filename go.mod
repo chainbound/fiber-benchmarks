@@ -7,6 +7,7 @@ require (
 	github.com/ethereum/go-ethereum v1.10.23
 	github.com/gorilla/websocket v1.5.0
 	github.com/joho/godotenv v1.4.0
+	github.com/montanaflynn/stats v0.6.6
 )
 
 require (
