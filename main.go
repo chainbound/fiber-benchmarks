@@ -170,10 +170,14 @@ func runBloxroute(ctx context.Context, endpoint, key string) error {
 			log.Println(err)
 		}
 
+		hash := decoded.Params.Result.TxHash
 		ts := time.Now().UnixMilli()
 
 		json.Unmarshal(msg, &decoded)
-		blxrMap[decoded.Params.Result.TxHash] = ts
+
+		if _, ok := blxrMap[hash]; !ok {
+			blxrMap[hash] = ts
+		}
 	}
 }
 
@@ -196,7 +200,9 @@ func runFiber(ctx context.Context, endpoint, key string) error {
 		default:
 		}
 
-		fiberMap[tx.Hash] = time.Now().UnixMilli()
+		if _, ok := fiberMap[tx.Hash]; !ok {
+			fiberMap[tx.Hash] = time.Now().UnixMilli()
+		}
 	}
 
 	return nil
