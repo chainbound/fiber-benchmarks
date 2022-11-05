@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -41,16 +42,20 @@ func main() {
 	}
 
 	fmt.Println("Running benchmark for", duration, "...")
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	fmt.Println("Bloxroute endpoint:", blxrEndpoint)
+	fmt.Println("Fiber endpoint:", fiberEndpoint)
+	ctx1, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+	ctx2, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
 
 	go func() {
-		if err := runBloxroute(ctx, blxrEndpoint, blxrKey); err != nil {
+		if err := runBloxroute(ctx1, blxrEndpoint, blxrKey); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
-	if err := runFiber(ctx, fiberEndpoint, fiberKey); err != nil {
+	if err := runFiber(ctx2, fiberEndpoint, fiberKey); err != nil {
 		log.Fatal(err)
 	}
 
@@ -62,6 +67,17 @@ func main() {
 
 	// Wait for both goroutines to exit
 	time.Sleep(time.Second)
+	f, err := os.Create("benchmarks.csv")
+	if err != nil {
+		log.Fatalln("failed to open file", err)
+	}
+
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	defer w.Flush()
+
+	w.Write([]string{"txHash", "diff"})
 
 	for fh, fts := range fiberMap {
 		for bh, bts := range blxrMap {
@@ -72,6 +88,8 @@ func main() {
 				} else {
 					blxrWon++
 				}
+
+				w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
 				sum += diff
 				entries++
 			}

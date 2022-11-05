@@ -13,3 +13,16 @@ go run .
 ```
 The program will run for `DURATION` time, after
 which it will print out the results of the benchmarks.
+
+Example output:
+```
+Running benchmark for 2m0s ...
+Bloxroute endpoint: wss://uk.eth.blxrbdn.com/ws
+Fiber endpoint: fiberapi.io:8080
+Fiber was 64ms faster on average
+Fiber won 623
+Bloxroute won 545
+Fiber won 53.34% of the time
+```
+It will also write all the individual transactions to `benchmarks.csv`, along with the difference in ms.
+Positive means Fiber was faster.
