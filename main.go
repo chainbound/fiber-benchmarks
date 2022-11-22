@@ -183,11 +183,12 @@ func runBloxroute(ctx context.Context, endpoint, key string) error {
 
 func runFiber(ctx context.Context, endpoint, key string) error {
 	c := fiber.NewClient(endpoint, key)
-	defer c.Close()
 
 	if err := c.Connect(ctx); err != nil {
 		return err
 	}
+	defer c.Close()
+	fmt.Println("Fiber connected")
 
 	sub := make(chan *fiber.Transaction)
 
