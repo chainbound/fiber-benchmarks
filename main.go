@@ -118,6 +118,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	p75, err := stats.Percentile(diffs, 75)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	p90, err := stats.Percentile(diffs, 90)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	std, err := stats.StandardDeviation(diffs)
 	if err != nil {
 		log.Fatal(err)
@@ -127,6 +137,8 @@ func main() {
 	fmt.Println("========== STATS =============")
 	fmt.Printf("Mean difference: %.2fms\n", mean)
 	fmt.Printf("Median difference: %.2fms\n", median)
+	fmt.Printf("P75 difference: %.2fms\n", p75)
+	fmt.Printf("P90 difference: %.2fms\n", p90)
 	fmt.Printf("Max difference: %.2fms\n", max)
 	fmt.Printf("Min difference: %.2fms\n", min)
 	fmt.Printf("Stdev: %.2fms\n", std)
