@@ -52,12 +52,12 @@ func main() {
 
 	go func() {
 		if err := runBloxroute(ctx1, blxrEndpoint, blxrKey); err != nil {
-			log.Fatal(err)
+			log.Fatal("running bloxroute", err)
 		}
 	}()
 
 	if err := runFiber(ctx2, fiberEndpoint, fiberKey); err != nil {
-		log.Fatal(err)
+		log.Fatal("running fiber", err)
 	}
 
 	entries := int64(0)
