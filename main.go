@@ -1,233 +1,311 @@
 package main
 
 import (
-	"context"
-	"encoding/csv"
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"time"
+        "context"
+        "encoding/csv"
+        "encoding/json"
+        "flag"
+        "fmt"
+        "log"
+        "net/http"
+        "os"
+        "time"
 
-	fiber "github.com/chainbound/fiber-go"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/gorilla/websocket"
-	"github.com/joho/godotenv"
-	"github.com/montanaflynn/stats"
+        fiber "github.com/chainbound/fiber-go"
+        "github.com/ethereum/go-ethereum/common"
+        "github.com/gorilla/websocket"
+        "github.com/joho/godotenv"
+        "github.com/montanaflynn/stats"
 )
 
 var blxrMap = make(map[common.Hash]int64, 10000)
 var fiberMap = make(map[common.Hash]int64, 10000)
+var fiberMap2 = make(map[common.Hash]int64, 10000)
+
+var modeFlag = flag.String("mode", "normal", "Mode to run in. Either 'normal' or 'fiber'")
 
 func main() {
-	godotenv.Load()
+        flag.Parse()
+        godotenv.Load()
 
-	blxrKey := os.Getenv("BLXR_API_KEY")
-	fiberKey := os.Getenv("FIBER_API_KEY")
+        blxrKey := os.Getenv("BLXR_API_KEY")
+        fiberKey := os.Getenv("FIBER_API_KEY")
 
-	if blxrKey == "" || fiberKey == "" {
-		log.Fatal("set API keys")
-	}
+        if blxrKey == "" || fiberKey == "" {
+                log.Fatal("set API keys")
+        }
 
-	blxrEndpoint := os.Getenv("BLXR_ENDPOINT")
-	fiberEndpoint := os.Getenv("FIBER_ENDPOINT")
+        blxrEndpoint := os.Getenv("BLXR_ENDPOINT")
+        fiberEndpoint := os.Getenv("FIBER_ENDPOINT")
 
-	if blxrEndpoint == "" || fiberEndpoint == "" {
-		log.Fatal("set endpoints")
-	}
+        if blxrEndpoint == "" || fiberEndpoint == "" {
+                log.Fatal("set endpoints")
+        }
 
-	duration, err := time.ParseDuration(os.Getenv("DURATION"))
-	if err != nil {
-		log.Fatal(err)
-	}
+        duration, err := time.ParseDuration(os.Getenv("DURATION"))
+        if err != nil {
+                log.Fatal(err)
+        }
 
-	fmt.Println("Running benchmark for", duration, "...")
-	fmt.Println("Bloxroute endpoint:", blxrEndpoint)
-	fmt.Println("Fiber endpoint:", fiberEndpoint)
-	ctx1, cancel := context.WithTimeout(context.Background(), duration)
-	defer cancel()
-	ctx2, cancel := context.WithTimeout(context.Background(), duration)
-	defer cancel()
+        ctx1, cancel := context.WithTimeout(context.Background(), duration)
+        defer cancel()
+        ctx2, cancel := context.WithTimeout(context.Background(), duration)
+        defer cancel()
 
-	go func() {
-		if err := runBloxroute(ctx1, blxrEndpoint, blxrKey); err != nil {
-			log.Fatal("running bloxroute", err)
-		}
-	}()
+        entries := int64(0)
+        sum := int64(0)
 
-	if err := runFiber(ctx2, fiberEndpoint, fiberKey); err != nil {
-		log.Fatal("running fiber", err)
-	}
+        fiberWon := 0
+        fiber2Won := 0
+        blxrWon := 0
 
-	entries := int64(0)
-	sum := int64(0)
+        f, err := os.Create("benchmarks.csv")
+        if err != nil {
+                log.Fatalln("failed to open file", err)
+        }
 
-	fiberWon := 0
-	blxrWon := 0
+        defer f.Close()
 
-	// Wait for both goroutines to exit
-	time.Sleep(time.Second)
-	f, err := os.Create("benchmarks.csv")
-	if err != nil {
-		log.Fatalln("failed to open file", err)
-	}
+        w := csv.NewWriter(f)
+        defer w.Flush()
 
-	defer f.Close()
+        w.Write([]string{"txHash", "diff"})
 
-	w := csv.NewWriter(f)
-	defer w.Flush()
+        var diffs []float64
 
-	w.Write([]string{"txHash", "diff"})
+        if *modeFlag == "fiber" {
+                fmt.Println("Running in Fiber benchmark mode")
+                fmt.Println("Running benchmark for", duration, "...")
 
-	var diffs []float64
+                fiberEndpoint2 := os.Getenv("FIBER_ENDPOINT_2")
+                fmt.Println("Fiber endpoints:", fiberEndpoint, fiberEndpoint2)
+                go func() {
+                        if err := runFiber(ctx2, fiberEndpoint, fiberKey); err != nil {
+                                log.Fatal("running fiber 1", err)
+                        }
+                }()
+                if err := runFiber2(ctx2, fiberEndpoint2, fiberKey); err != nil {
+                        log.Fatal("running fiber 2", err)
+                }
+                // Wait for both goroutines to exit
+                time.Sleep(time.Second)
 
-	for fh, fts := range fiberMap {
-		for bh, bts := range blxrMap {
-			if fh == bh {
-				diff := bts - fts
-				if diff > 0 {
-					fiberWon++
-				} else {
-					blxrWon++
-				}
+                fmt.Println("Fiber saw", len(fiberMap), "txs")
+                fmt.Println("Fiber 2 saw", len(fiberMap2), "txs")
 
-				w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
-				diffs = append(diffs, float64(diff))
-				sum += diff
-				entries++
-			}
-		}
-	}
+                for fh, fts := range fiberMap {
+                        for bh, bts := range fiberMap2 {
+                                if fh == bh {
+                                        diff := bts - fts
+                                        if diff > 0 {
+                                                fiberWon++
+                                        } else {
+                                                fiber2Won++
+                                        }
 
-	mean, err := stats.Mean(diffs)
-	if err != nil {
-		log.Fatal(err)
-	}
-	max, err := stats.Max(diffs)
-	if err != nil {
-		log.Fatal(err)
-	}
-	min, err := stats.Min(diffs)
-	if err != nil {
-		log.Fatal(err)
-	}
+                                        w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
+                                        diffs = append(diffs, float64(diff))
+                                        sum += diff
+                                        entries++
+                                }
+                        }
+                }
+        } else {
+                fmt.Println("Running benchmark for", duration, "...")
+                fmt.Println("Bloxroute endpoint:", blxrEndpoint)
+                fmt.Println("Fiber endpoint:", fiberEndpoint)
 
-	median, err := stats.Median(diffs)
-	if err != nil {
-		log.Fatal(err)
-	}
+                go func() {
+                        if err := runBloxroute(ctx1, blxrEndpoint, blxrKey); err != nil {
+                                log.Fatal("running bloxroute", err)
+                        }
+                }()
 
-	p10, err := stats.Percentile(diffs, 10)
-	if err != nil {
-		log.Fatal(err)
-	}
+                if err := runFiber(ctx2, fiberEndpoint, fiberKey); err != nil {
+                        log.Fatal("running fiber", err)
+                }
 
-	p25, err := stats.Percentile(diffs, 25)
-	if err != nil {
-		log.Fatal(err)
-	}
+                // Wait for both goroutines to exit
+                time.Sleep(time.Second)
 
-	p75, err := stats.Percentile(diffs, 75)
-	if err != nil {
-		log.Fatal(err)
-	}
+                for fh, fts := range fiberMap {
+                        for bh, bts := range blxrMap {
+                                if fh == bh {
+                                        diff := bts - fts
+                                        if diff > 0 {
+                                                fiberWon++
+                                        } else {
+                                                if diff < -30 {
+                                                        fmt.Println(fh, diff)
+                                                }
+                                                blxrWon++
+                                        }
 
-	p90, err := stats.Percentile(diffs, 90)
-	if err != nil {
-		log.Fatal(err)
-	}
+                                        w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
+                                        diffs = append(diffs, float64(diff))
+                                        sum += diff
+                                        entries++
+                                }
+                        }
+                }
+        }
 
-	std, err := stats.StandardDeviation(diffs)
-	if err != nil {
-		log.Fatal(err)
-	}
+        mean, err := stats.Mean(diffs)
+        if err != nil {
+                log.Fatal(err)
+        }
+        max, err := stats.Max(diffs)
+        if err != nil {
+                log.Fatal(err)
+        }
+        min, err := stats.Min(diffs)
+        if err != nil {
+                log.Fatal(err)
+        }
 
-	fmt.Println()
-	fmt.Println("========== STATS =============")
-	fmt.Printf("Mean difference: %.2fms\n", mean)
-	fmt.Printf("Median difference: %.2fms\n", median)
-	fmt.Printf("P10 difference: %.2fms\n", p10)
-	fmt.Printf("P25 difference: %.2fms\n", p25)
-	fmt.Printf("P75 difference: %.2fms\n", p75)
-	fmt.Printf("P90 difference: %.2fms\n", p90)
-	fmt.Printf("Max difference: %.2fms\n", max)
-	fmt.Printf("Min difference: %.2fms\n", min)
-	fmt.Printf("Stdev: %.2fms\n", std)
+        median, err := stats.Median(diffs)
+        if err != nil {
+                log.Fatal(err)
+        }
 
-	fmt.Println()
-	fmt.Println("========== RESULT =============")
-	fmt.Printf("Fiber won %.2f%% of the time\n", float64(fiberWon)/float64(entries)*100)
+        p10, err := stats.Percentile(diffs, 10)
+        if err != nil {
+                log.Fatal(err)
+        }
+
+        p25, err := stats.Percentile(diffs, 25)
+        if err != nil {
+                log.Fatal(err)
+        }
+
+        p75, err := stats.Percentile(diffs, 75)
+        if err != nil {
+                log.Fatal(err)
+        }
+
+        p90, err := stats.Percentile(diffs, 90)
+        if err != nil {
+                log.Fatal(err)
+        }
+
+        std, err := stats.StandardDeviation(diffs)
+        if err != nil {
+                log.Fatal(err)
+        }
+
+        fmt.Println()
+        fmt.Println("========== STATS =============")
+        fmt.Printf("Mean difference: %.2fms\n", mean)
+        fmt.Printf("Median difference: %.2fms\n", median)
+        fmt.Printf("P10 difference: %.2fms\n", p10)
+        fmt.Printf("P25 difference: %.2fms\n", p25)
+        fmt.Printf("P75 difference: %.2fms\n", p75)
+        fmt.Printf("P90 difference: %.2fms\n", p90)
+        fmt.Printf("Max difference: %.2fms\n", max)
+        fmt.Printf("Min difference: %.2fms\n", min)
+        fmt.Printf("Stdev: %.2fms\n", std)
+
+        fmt.Println()
+        fmt.Println("========== RESULT =============")
+        fmt.Printf("Fiber won %.2f%% of the time\n", float64(fiberWon)/float64(entries)*100)
 }
 
 type BlxrMsg struct {
-	Params struct {
-		Result struct {
-			TxHash common.Hash
-		}
-	}
+        Params struct {
+                Result struct {
+                        TxHash common.Hash
+                }
+        }
 }
 
 func runBloxroute(ctx context.Context, endpoint, key string) error {
-	dialer := websocket.DefaultDialer
-	sub, _, err := dialer.Dial(endpoint, http.Header{"Authorization": []string{key}})
-	if err != nil {
-		return err
-	}
+        dialer := websocket.DefaultDialer
+        sub, _, err := dialer.Dial(endpoint, http.Header{"Authorization": []string{key}})
+        if err != nil {
+                return err
+        }
 
-	subReq := `{"id": 1, "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash", "tx_contents"]}]}`
+        subReq := `{"id": 1, "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash", "tx_contents"]}]}`
 
-	err = sub.WriteMessage(websocket.TextMessage, []byte(subReq))
-	if err != nil {
-		return err
-	}
+        err = sub.WriteMessage(websocket.TextMessage, []byte(subReq))
+        if err != nil {
+                return err
+        }
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-		var decoded BlxrMsg
-		_, msg, err := sub.ReadMessage()
-		if err != nil {
-			log.Println(err)
-		}
+        for {
+                select {
+                case <-ctx.Done():
+                        return nil
+                default:
+                }
+                var decoded BlxrMsg
+                _, msg, err := sub.ReadMessage()
+                if err != nil {
+                        log.Println(err)
+                }
 
-		ts := time.Now().UnixMilli()
+                ts := time.Now().UnixMilli()
 
-		json.Unmarshal(msg, &decoded)
-		hash := decoded.Params.Result.TxHash
+                json.Unmarshal(msg, &decoded)
+                hash := decoded.Params.Result.TxHash
 
-		if _, ok := blxrMap[hash]; !ok {
-			blxrMap[hash] = ts
-		}
-	}
+                if _, ok := blxrMap[hash]; !ok {
+                        blxrMap[hash] = ts
+                }
+        }
 }
 
 func runFiber(ctx context.Context, endpoint, key string) error {
-	c := fiber.NewClient(endpoint, key)
+        c := fiber.NewClient(endpoint, key)
 
-	if err := c.Connect(ctx); err != nil {
-		return err
+        if err := c.Connect(ctx); err != nil {
+                return err
+        }
+        defer c.Close()
+        fmt.Println("Fiber connected")
+
+        sub := make(chan *fiber.Transaction)
+
+        go c.SubscribeNewTxs(nil, sub)
+
+        for tx := range sub {
+                select {
+                case <-ctx.Done():
+                        return nil
+                default:
+                }
+
+                if _, ok := fiberMap[tx.Hash]; !ok {
+                        fiberMap[tx.Hash] = time.Now().UnixMilli()
+                }
 	}
-	defer c.Close()
-	fmt.Println("Fiber connected")
 
-	sub := make(chan *fiber.Transaction)
+	return nil
+}
 
-	go c.SubscribeNewTxs(nil, sub)
+func runFiber2(ctx context.Context, endpoint, key string) error {
+        c := fiber.NewClient(endpoint, key)
 
-	for tx := range sub {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
+        if err := c.Connect(ctx); err != nil {
+                return err
+        }
+        defer c.Close()
+        fmt.Println("Fiber connected")
 
-		if _, ok := fiberMap[tx.Hash]; !ok {
-			fiberMap[tx.Hash] = time.Now().UnixMilli()
-		}
+        sub := make(chan *fiber.Transaction)
+
+        go c.SubscribeNewTxs(nil, sub)
+
+        for tx := range sub {
+                select {
+                case <-ctx.Done():
+                        return nil
+                default:
+                }
+
+                if _, ok := fiberMap2[tx.Hash]; !ok {
+                        fiberMap2[tx.Hash] = time.Now().UnixMilli()
+                }
 	}
 
 	return nil
