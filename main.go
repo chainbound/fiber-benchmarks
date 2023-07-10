@@ -182,29 +182,32 @@ func main() {
 		log.Fatal(err)
 	}
 
-	p10, err := stats.Percentile(diffs, 10)
-	if err != nil {
-		log.Fatal(err)
-	}
+	var p10, p25, p75, p90, std float64
+	if *streamFlag != "blocks" {
+		p10, err = stats.Percentile(diffs, 10)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	p25, err := stats.Percentile(diffs, 25)
-	if err != nil {
-		log.Fatal(err)
-	}
+		p25, err = stats.Percentile(diffs, 25)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	p75, err := stats.Percentile(diffs, 75)
-	if err != nil {
-		log.Fatal(err)
-	}
+		p75, err = stats.Percentile(diffs, 75)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	p90, err := stats.Percentile(diffs, 90)
-	if err != nil {
-		log.Fatal(err)
-	}
+		p90, err = stats.Percentile(diffs, 90)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	std, err := stats.StandardDeviation(diffs)
-	if err != nil {
-		log.Fatal(err)
+		std, err = stats.StandardDeviation(diffs)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	fmt.Println()
@@ -213,10 +216,12 @@ func main() {
 	fmt.Println("Bloxroute messages seen:", len(blxrMap))
 	fmt.Printf("Mean difference: %.2fms\n", mean)
 	fmt.Printf("Median difference: %.2fms\n", median)
-	fmt.Printf("P10 difference: %.2fms\n", p10)
-	fmt.Printf("P25 difference: %.2fms\n", p25)
-	fmt.Printf("P75 difference: %.2fms\n", p75)
-	fmt.Printf("P90 difference: %.2fms\n", p90)
+	if *streamFlag != "blocks" {
+		fmt.Printf("P10 difference: %.2fms\n", p10)
+		fmt.Printf("P25 difference: %.2fms\n", p25)
+		fmt.Printf("P75 difference: %.2fms\n", p75)
+		fmt.Printf("P90 difference: %.2fms\n", p90)
+	}
 	fmt.Printf("Max difference: %.2fms\n", max)
 	fmt.Printf("Min difference: %.2fms\n", min)
 	fmt.Printf("Stdev: %.2fms\n", std)
@@ -288,7 +293,7 @@ func runBloxrouteBlocks(ctx context.Context, endpoint, key string) error {
 		return err
 	}
 
-	subReq := `{"id": 1, "method": "subscribe", "params": ["newBlocks", {"include": ["hash", "header", "transactions"]}]}`
+	subReq := `{"id": 1, "method": "subscribe", "params": ["bdnBlocks", {"include": ["hash", "header", "transactions"]}]}`
 
 	err = sub.WriteMessage(websocket.TextMessage, []byte(subReq))
 	if err != nil {
