@@ -18,8 +18,11 @@ import (
 	"github.com/montanaflynn/stats"
 )
 
+var lastTs = int64(0)
+
 var blxrMap = make(map[common.Hash]int64, 10000)
 var fiberMap = make(map[common.Hash]int64, 10000)
+var beaconMap = make(map[common.Hash]int64, 10000)
 var fiberMap2 = make(map[common.Hash]int64, 10000)
 
 var modeFlag = flag.String("mode", "normal", "Mode to run in. Either 'normal' or 'fiber'")
@@ -96,6 +99,41 @@ func main() {
 
 		for fh, fts := range fiberMap {
 			for bh, bts := range fiberMap2 {
+				if fh == bh {
+					diff := bts - fts
+					if diff > 0 {
+						fiberWon++
+					} else {
+						fiber2Won++
+					}
+
+					w.Write([]string{fh.Hex(), fmt.Sprint(diff)})
+					diffs = append(diffs, float64(diff))
+					sum += diff
+					entries++
+				}
+			}
+		}
+	} else if *modeFlag == "beacon" {
+		fmt.Println("Running in Beacon node benchmark mode")
+		beaconEndpoint := os.Getenv("BEACON_ENDPOINT")
+		fmt.Println("Beacon endpoint:", beaconEndpoint)
+
+		go func() {
+			if err := runBeaconBlocks(ctx1, beaconEndpoint); err != nil {
+				log.Fatal(err)
+			}
+		}()
+
+		if err := runFiberBlocks(ctx1, fiberEndpoint, fiberKey); err != nil {
+			log.Fatal(err)
+		}
+
+		// Wait for both goroutines to exit
+		time.Sleep(time.Second)
+
+		for fh, fts := range beaconMap {
+			for bh, bts := range fiberMap {
 				if fh == bh {
 					diff := bts - fts
 					if diff > 0 {
@@ -374,6 +412,7 @@ func runFiberBlocks(ctx context.Context, endpoint, key string) error {
 		}
 
 		ts := time.Now().UnixMilli()
+		lastTs = ts
 
 		fmt.Printf("[%d] [Fiber] New block: %s (%d)\n", ts, tx.Hash, len(tx.Transactions))
 
@@ -383,6 +422,59 @@ func runFiberBlocks(ctx context.Context, endpoint, key string) error {
 	}
 
 	return nil
+}
+
+type BeaconHead struct {
+	Slot  uint64
+	Block common.Hash
+}
+
+func runBeaconBlocks(ctx context.Context, endpoint string) error {
+	req, err := http.NewRequest("GET", endpoint+"/eth/v1/events?topics=block", nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Connection", "keep-alive")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+
+		data := make([]byte, 1024)
+		var bh BeaconHead
+		_, err := resp.Body.Read(data)
+		if err != nil {
+			return err
+		}
+
+		ts := time.Now().UnixMilli()
+
+		fmt.Println("Diff:", ts-lastTs)
+
+		// data = bytes.Trim(data[17:], "\x00")
+		// fmt.Println(len(data), string(data))
+
+		// if err := json.Unmarshal(data, &bh); err != nil {
+		// 	fmt.Println("Error unmarshalling beacon head")
+		// }
+
+		fmt.Printf("[%d] [Beacon] New block: %s\n", ts, bh.Block)
+		if _, ok := beaconMap[bh.Block]; !ok {
+			fiberMap[bh.Block] = ts
+		}
+	}
 }
 
 func runFiber2(ctx context.Context, endpoint, key string) error {
