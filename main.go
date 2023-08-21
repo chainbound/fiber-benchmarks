@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"time"
@@ -125,15 +127,15 @@ func main() {
 			}
 		}()
 
-		if err := runFiberBlocks(ctx1, fiberEndpoint, fiberKey); err != nil {
+		if err := runFiberBeaconBlocks(ctx1, fiberEndpoint, fiberKey); err != nil {
 			log.Fatal(err)
 		}
 
 		// Wait for both goroutines to exit
 		time.Sleep(time.Second)
 
-		for fh, fts := range beaconMap {
-			for bh, bts := range fiberMap {
+		for fh, fts := range fiberMap {
+			for bh, bts := range beaconMap {
 				if fh == bh {
 					diff := bts - fts
 					if diff > 0 {
@@ -400,9 +402,9 @@ func runFiberBlocks(ctx context.Context, endpoint, key string) error {
 	defer c.Close()
 	fmt.Println("Fiber connected")
 
-	sub := make(chan *fiber.Block)
+	sub := make(chan *fiber.ExecutionPayload)
 
-	go c.SubscribeNewBlocks(sub)
+	go c.SubscribeNewExecutionPayloads(sub)
 
 	for tx := range sub {
 		select {
@@ -414,10 +416,46 @@ func runFiberBlocks(ctx context.Context, endpoint, key string) error {
 		ts := time.Now().UnixMilli()
 		lastTs = ts
 
-		fmt.Printf("[%d] [Fiber] New block: %s (%d)\n", ts, tx.Hash, len(tx.Transactions))
+		fmt.Printf("[%d] [Fiber] New block: %s (%d)\n", ts, tx.Header.Hash, len(tx.Transactions))
 
-		if _, ok := fiberMap[tx.Hash]; !ok {
-			fiberMap[tx.Hash] = ts
+		if _, ok := fiberMap[tx.Header.Hash]; !ok {
+			fiberMap[tx.Header.Hash] = ts
+		}
+	}
+
+	return nil
+}
+
+func runFiberBeaconBlocks(ctx context.Context, endpoint, key string) error {
+	c := fiber.NewClient(endpoint, key)
+
+	if err := c.Connect(ctx); err != nil {
+		return err
+	}
+	defer c.Close()
+	fmt.Println("Fiber connected")
+
+	sub := make(chan *fiber.BeaconBlock)
+
+	go c.SubscribeNewBeaconBlocks(sub)
+
+	for block := range sub {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+
+		ts := time.Now().UnixMilli()
+		lastTs = ts
+
+		slot := big.NewInt(int64(block.Slot))
+
+		fmt.Printf("[%d] [Fiber] New beacon block: %s\n", ts, block.StateRoot)
+
+		hash := common.BigToHash(slot)
+		if _, ok := fiberMap[hash]; !ok {
+			fiberMap[hash] = ts
 		}
 	}
 
@@ -425,8 +463,8 @@ func runFiberBlocks(ctx context.Context, endpoint, key string) error {
 }
 
 type BeaconHead struct {
-	Slot  uint64
-	Block common.Hash
+	Slot  string
+	Block string
 }
 
 func runBeaconBlocks(ctx context.Context, endpoint string) error {
@@ -463,16 +501,19 @@ func runBeaconBlocks(ctx context.Context, endpoint string) error {
 
 		fmt.Println("Diff:", ts-lastTs)
 
-		// data = bytes.Trim(data[17:], "\x00")
-		// fmt.Println(len(data), string(data))
+		data = bytes.Trim(data[17:], "\x00")
+		if err := json.Unmarshal(data, &bh); err != nil {
+			fmt.Println("Error unmarshalling beacon head:", err)
+			continue
+		}
 
-		// if err := json.Unmarshal(data, &bh); err != nil {
-		// 	fmt.Println("Error unmarshalling beacon head")
-		// }
+		slot, _ := new(big.Int).SetString(bh.Slot, 10)
+
+		hash := common.BigToHash(slot)
 
 		fmt.Printf("[%d] [Beacon] New block: %s\n", ts, bh.Block)
-		if _, ok := beaconMap[bh.Block]; !ok {
-			fiberMap[bh.Block] = ts
+		if _, ok := beaconMap[hash]; !ok {
+			beaconMap[hash] = ts
 		}
 	}
 }
