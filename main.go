@@ -231,6 +231,7 @@ func (b *TransactionBenchmarker) runInterval() {
 
 	// Initialize interval timer
 	timer := time.NewTimer(b.config.interval)
+	end := time.Now().Add(b.config.interval)
 
 	fmt.Println()
 
@@ -264,7 +265,7 @@ loop:
 					truthMap[tx.Hash] = struct{}{}
 				}
 				fmt.Printf("\033[1A\033[K")
-				b.logger.Info().Int("block_number", int(payload.Header.Number)).Int("amount_confirmed", len(truthMap)).Msg("Recorded execution payload transactions")
+				b.logger.Info().Int("block_number", int(payload.Header.Number)).Int("amount_confirmed", len(truthMap)).Str("remaining", time.Until(end).String()).Msg("Recorded execution payload transactions")
 			}
 		}
 	}
