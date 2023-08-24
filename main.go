@@ -271,7 +271,7 @@ loop:
 
 func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[common.Hash]int64, truthMap map[common.Hash]struct{}) {
 	diffMap := make(map[common.Hash]float64, len(truthMap))
-	differences := make([]float64, len(truthMap))
+	differences := make([]float64, 0, len(truthMap))
 
 	for hash := range truthMap {
 		var (
@@ -289,11 +289,10 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 			otherSaw = true
 		}
 
-		microDiff := otherTs - fiberTs
-		milliDiff := float64(microDiff) / 1000
-
 		switch {
 		case fiberSaw && otherSaw:
+			microDiff := otherTs - fiberTs
+			milliDiff := float64(microDiff) / 1000
 			// Both saw the transaction. Record the difference
 			diffMap[hash] = milliDiff
 			differences = append(differences, milliDiff)
@@ -308,7 +307,7 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 			}
 
 			if b.csvWriter != nil {
-				b.csvWriter.Write([]string{hash.Hex(), fmt.Sprint(fiberTs), fmt.Sprint(0), fmt.Sprint(microDiff)})
+				b.csvWriter.Write([]string{hash.Hex(), fmt.Sprint(fiberTs), fmt.Sprint(0), fmt.Sprint(0)})
 			}
 		case !fiberSaw && otherSaw:
 			// Only the other source saw the transaction
@@ -317,14 +316,14 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 			}
 
 			if b.csvWriter != nil {
-				b.csvWriter.Write([]string{hash.Hex(), fmt.Sprint(0), fmt.Sprint(otherTs), fmt.Sprint(microDiff)})
+				b.csvWriter.Write([]string{hash.Hex(), fmt.Sprint(0), fmt.Sprint(otherTs), fmt.Sprint(0)})
 			}
 		}
 	}
 
 	fmt.Println(types.MakeHistogram(differences))
-	b.logger.Info().Msg(fmt.Sprintf("Fiber total observations: %d", len(fiberMap)))
-	b.logger.Info().Msg(fmt.Sprintf("Bloxroute total observations: %d", len(fiberMap)))
+	b.logger.Info().Msg(fmt.Sprintf("fiber total observations: %d", len(fiberMap)))
+	b.logger.Info().Msg(fmt.Sprintf("%s total observations: %d", b.otherSourceName, len(otherMap)))
 	b.printStats(differences)
 
 }
@@ -355,9 +354,20 @@ func (b *TransactionBenchmarker) printStats(differences []float64) {
 		b.logger.Error().Err(err).Msg("Failed to calculate stdev")
 	}
 
+	min, err := stats.Min(differences)
+	if err != nil {
+		b.logger.Error().Err(err).Msg("Failed to calculate min")
+	}
+
+	max, err := stats.Max(differences)
+	if err != nil {
+		b.logger.Error().Err(err).Msg("Failed to calculate max")
+	}
+
 	b.logger.Info().Msg(fmt.Sprintf("Mean: %.4fms", mean))
 	b.logger.Info().Msg(fmt.Sprintf("Median: %.4fms", median))
 	b.logger.Info().Msg(fmt.Sprintf("Stdev: %.4fms", stdev))
+	b.logger.Info().Msg(fmt.Sprintf("Min: %.4fms | Max: %.4fms", min, max))
 
 	wonRatio := fiberWon / (fiberWon + blxrWon)
 	b.logger.Info().Msg(fmt.Sprintf("Fiber won: %.2f%%", wonRatio*100))

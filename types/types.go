@@ -33,6 +33,8 @@ func MakeHistogram(data []float64) string {
 	}
 	histogram := make([]int, numBins)
 
+	fmt.Println(data)
+
 	for _, value := range data {
 		binIndex := getBinIndex(value, minValue, maxValue)
 		if binIndex >= 0 && binIndex < numBins {
