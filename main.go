@@ -330,6 +330,16 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 }
 
 func (b *TransactionBenchmarker) printStats(differences []float64) {
+	fiberWon := float64(0)
+	blxrWon := float64(0)
+
+	for _, diff := range differences {
+		if diff > 0 {
+			fiberWon++
+		} else {
+			blxrWon++
+		}
+	}
 	mean, err := stats.Mean(differences)
 	if err != nil {
 		b.logger.Error().Err(err).Msg("Failed to calculate mean")
@@ -348,6 +358,9 @@ func (b *TransactionBenchmarker) printStats(differences []float64) {
 	b.logger.Info().Msg(fmt.Sprintf("Mean: %.4fms", mean))
 	b.logger.Info().Msg(fmt.Sprintf("Median: %.4fms", median))
 	b.logger.Info().Msg(fmt.Sprintf("Stdev: %.4fms", stdev))
+
+	wonRatio := fiberWon / (fiberWon + blxrWon)
+	b.logger.Info().Msg(fmt.Sprintf("Fiber won: %.2f%%", wonRatio*100))
 }
 
 // type BlxrBlock struct {
