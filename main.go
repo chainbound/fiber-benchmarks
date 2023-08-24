@@ -156,7 +156,7 @@ type TransactionBenchmarker struct {
 	csvWriter *csv.Writer
 
 	// Results of all intervals
-	results []IntervalResult
+	// results []IntervalResult
 }
 
 func runTransactionBenchmark(config *config) error {
@@ -258,6 +258,7 @@ loop:
 			}
 		case payload := <-payloadStream:
 			if b.config.crossCheck {
+				b.logger.Info().Int("number", int(payload.Header.Number)).Msg("Recording execution payload transactions")
 				for _, tx := range payload.Transactions {
 					truthMap[tx.Hash] = struct{}{}
 				}
@@ -344,9 +345,9 @@ func (b *TransactionBenchmarker) printStats(differences []float64) {
 		b.logger.Error().Err(err).Msg("Failed to calculate stdev")
 	}
 
-	b.logger.Info().Msg(fmt.Sprintf("Mean: %.2fms", mean))
-	b.logger.Info().Msg(fmt.Sprintf("Median: %.2fms", median))
-	b.logger.Info().Msg(fmt.Sprintf("Stdev: %.2fms", stdev))
+	b.logger.Info().Msg(fmt.Sprintf("Mean: %.4fms", mean))
+	b.logger.Info().Msg(fmt.Sprintf("Median: %.4fms", median))
+	b.logger.Info().Msg(fmt.Sprintf("Stdev: %.4fms", stdev))
 }
 
 // type BlxrBlock struct {
