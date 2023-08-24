@@ -163,7 +163,7 @@ func runTransactionBenchmark(config *config) error {
 	// - For each interval, we collect all data from both streams
 	// - At the end of the interval, we print the stats and save the result
 	// - At the end of the benchmark, we print the overall stats
-	logger := NewLogger("tx-bencher")
+	logger := NewLogger("benchmark")
 	var writer *csv.Writer
 	if config.logFile != "" {
 		f, err := os.Create(config.logFile)
@@ -232,6 +232,8 @@ func (b *TransactionBenchmarker) runInterval() {
 	// Initialize interval timer
 	timer := time.NewTimer(b.config.interval)
 
+	fmt.Println()
+
 loop:
 	for {
 		select {
@@ -258,10 +260,11 @@ loop:
 			}
 		case payload := <-payloadStream:
 			if b.config.crossCheck {
-				b.logger.Info().Int("number", int(payload.Header.Number)).Msg("Recording execution payload transactions")
 				for _, tx := range payload.Transactions {
 					truthMap[tx.Hash] = struct{}{}
 				}
+				fmt.Printf("\033[1A\033[K")
+				b.logger.Info().Int("block_number", int(payload.Header.Number)).Int("amount_confirmed", len(truthMap)).Msg("Recorded execution payload transactions")
 			}
 		}
 	}
