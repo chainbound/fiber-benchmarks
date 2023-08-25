@@ -8,7 +8,10 @@ func ConfirmedObservationsDDL(db string) string {
     fiber_timestamp Int64,
     other_timestamp Int64,
     difference Int64,
-	benchmark_id String
+	benchmark_id String,
+	from String,
+	to String,
+	calldata_size Int64
 ) ENGINE = MergeTree()
 PRIMARY KEY (tx_hash, difference)`, db)
 }

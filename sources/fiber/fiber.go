@@ -8,8 +8,6 @@ import (
 	fiber "github.com/chainbound/fiber-go"
 )
 
-const BUFFER_SIZE = 4096
-
 type FiberSource struct {
 	client *fiber.Client
 	done   chan struct{}
@@ -61,8 +59,11 @@ func (f *FiberSource) SubscribeTransactionObservations() chan types.Observation 
 
 		for tx := range ch {
 			hashCh <- types.Observation{
-				Hash:      tx.Hash,
-				Timestamp: time.Now().UnixMicro(),
+				Hash:         tx.Hash,
+				Timestamp:    time.Now().UnixMicro(),
+				CallDataSize: int64(len(tx.Input)),
+				From:         tx.From.Hex(),
+				To:           tx.To.Hex(),
 			}
 		}
 	}()

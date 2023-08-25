@@ -29,7 +29,11 @@ type blxrResponse[T any] struct {
 // A bloxroute transaction
 type Transaction struct {
 	TxHash     common.Hash
-	TxContents any
+	TxContents struct {
+		Input string
+		From  string
+		To    string
+	}
 }
 
 // A bloxroute block
@@ -109,9 +113,14 @@ func (b *BloxrouteSource) SubscribeTransactionObservations() chan types.Observat
 
 	go func() {
 		for tx := range ch {
+			calldata := common.Hex2Bytes(tx.TxContents.Input)
+
 			hashCh <- types.Observation{
-				Hash:      tx.TxHash,
-				Timestamp: time.Now().UnixMicro(),
+				Hash:         tx.TxHash,
+				Timestamp:    time.Now().UnixMicro(),
+				CallDataSize: int64(len(calldata)),
+				From:         tx.TxContents.From,
+				To:           tx.TxContents.To,
 			}
 		}
 	}()

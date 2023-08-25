@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/csv"
 	"fmt"
 	"os"
 	"time"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/chainbound/fiber-benchmarks/log"
 	"github.com/chainbound/fiber-benchmarks/sinks/clickhouse"
+	"github.com/chainbound/fiber-benchmarks/sinks/csv"
 	"github.com/chainbound/fiber-benchmarks/sources/bloxroute"
 	"github.com/chainbound/fiber-benchmarks/sources/fiber"
 	"github.com/chainbound/fiber-benchmarks/types"
@@ -43,7 +43,7 @@ type config struct {
 }
 
 func (c *config) validate() error {
-	if c.sink != "none" && c.sink != "stdout" && c.sink != "clickhouse" && c.sink != "svg" {
+	if c.sink != "none" && c.sink != "stdout" && c.sink != "clickhouse" && c.sink != "csv" {
 		return fmt.Errorf("invalid sink: %s", c.sink)
 	}
 
@@ -62,6 +62,12 @@ func (c *config) validate() error {
 
 		if c.clickhouse.DB == "" {
 			return fmt.Errorf("clickhouse database is required")
+		}
+	}
+
+	if c.sink == "csv" {
+		if c.logFile == "" {
+			return fmt.Errorf("log file is required for CSV sink")
 		}
 	}
 
@@ -160,7 +166,7 @@ func main() {
 			},
 			&cli.StringFlag{
 				Name:        "log-file",
-				Usage:       "File to save detailed logs",
+				Usage:       "File to save detailed logs in case of file sink",
 				Destination: &config.logFile,
 			},
 			&cli.StringFlag{
@@ -227,22 +233,12 @@ func setupSink(config *config) (Sink, error) {
 
 		return c, nil
 	case "csv":
-		var writer *csv.Writer
-		if config.logFile != "" {
-			f, err := os.Create(config.logFile)
-			if err != nil {
-				return nil, err
-			}
-
-			defer f.Close()
-
-			writer = csv.NewWriter(f)
-			defer writer.Flush()
-
-			writer.Write([]string{"tx_hash", "fiber_timestamp", "other_timestamp", "diff"})
+		w, err := csv.NewCsvSink(config.logFile)
+		if err != nil {
+			return nil, err
 		}
-		// TODO: Support CSV sink
-		return nil, nil
+
+		return w, nil
 	default:
 		return nil, fmt.Errorf("invalid sink: %s", config.sink)
 	}
@@ -323,8 +319,8 @@ func (b *TransactionBenchmarker) Run() {
 func (b *TransactionBenchmarker) runInterval(fiberStream chan types.Observation, otherStream chan types.Observation, payloadStream chan *f.ExecutionPayload) (types.ObservationStatsRow, error) {
 	// Setup
 	var (
-		fiberMap = make(map[common.Hash]int64)
-		otherMap = make(map[common.Hash]int64)
+		fiberMap = make(map[common.Hash]types.Observation)
+		otherMap = make(map[common.Hash]types.Observation)
 		truthMap = make(map[common.Hash]struct{})
 	)
 
@@ -342,13 +338,13 @@ loop:
 		case fiberObs := <-fiberStream:
 			// If we're not in the tail window, continue as usual
 			if _, ok := fiberMap[fiberObs.Hash]; !ok {
-				fiberMap[fiberObs.Hash] = fiberObs.Timestamp
+				fiberMap[fiberObs.Hash] = fiberObs
 			} else {
 				b.logger.Warn().Str("hash", fiberObs.Hash.Hex()).Str("source", "fiber").Msg("Duplicate hash during interval")
 			}
 		case otherObs := <-otherStream:
 			if _, ok := otherMap[otherObs.Hash]; !ok {
-				otherMap[otherObs.Hash] = otherObs.Timestamp
+				otherMap[otherObs.Hash] = otherObs
 			} else {
 				b.logger.Warn().Str("hash", otherObs.Hash.Hex()).Str("source", b.otherSourceName).Msg("Duplicate hash during interval")
 			}
@@ -368,7 +364,7 @@ loop:
 	return b.processIntervalResults(fiberMap, otherMap, truthMap)
 }
 
-func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[common.Hash]int64, truthMap map[common.Hash]struct{}) (types.ObservationStatsRow, error) {
+func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[common.Hash]types.Observation, truthMap map[common.Hash]struct{}) (types.ObservationStatsRow, error) {
 	diffMap := make(map[common.Hash]float64, len(truthMap))
 	differences := make([]float64, 0, len(truthMap))
 
@@ -378,15 +374,18 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 			otherSaw = false
 		)
 
-		fiberTs, ok := fiberMap[hash]
+		fiberObs, ok := fiberMap[hash]
 		if ok {
 			fiberSaw = true
 		}
 
-		otherTs, ok := otherMap[hash]
+		otherObs, ok := otherMap[hash]
 		if ok {
 			otherSaw = true
 		}
+
+		fiberTs := fiberObs.Timestamp
+		otherTs := otherObs.Timestamp
 
 		switch {
 		case fiberSaw && otherSaw:
@@ -403,6 +402,9 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 					OtherTimestamp: otherTs,
 					Difference:     microDiff,
 					BenchmarkID:    b.config.benchmarkID,
+					From:           fiberObs.From,
+					To:             fiberObs.To,
+					CallDataSize:   fiberObs.CallDataSize,
 				})
 			}
 		case fiberSaw && !otherSaw:
@@ -418,6 +420,9 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 					OtherTimestamp: 0,
 					Difference:     0,
 					BenchmarkID:    b.config.benchmarkID,
+					From:           fiberObs.From,
+					To:             fiberObs.To,
+					CallDataSize:   fiberObs.CallDataSize,
 				})
 			}
 		case !fiberSaw && otherSaw:
@@ -433,6 +438,9 @@ func (b *TransactionBenchmarker) processIntervalResults(fiberMap, otherMap map[c
 					OtherTimestamp: otherTs,
 					Difference:     0,
 					BenchmarkID:    b.config.benchmarkID,
+					From:           otherObs.From,
+					To:             otherObs.To,
+					CallDataSize:   otherObs.CallDataSize,
 				})
 			}
 		}

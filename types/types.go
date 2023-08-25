@@ -16,6 +16,9 @@ type ConfirmedObservationRow struct {
 	OtherTimestamp int64  `ch:"other_timestamp"`
 	Difference     int64  `ch:"difference"`
 	BenchmarkID    string `ch:"benchmark_id"`
+	From           string `ch:"from"`
+	To             string `ch:"to"`
+	CallDataSize   int64  `ch:"calldata_size"`
 }
 
 type ObservationStatsRow struct {
@@ -53,7 +56,10 @@ type Observation struct {
 	// Hash
 	Hash common.Hash
 	// Timestamp in microseconds
-	Timestamp int64
+	Timestamp    int64
+	From         string
+	To           string
+	CallDataSize int64
 }
 
 // Use a buffer here because we don't want to block transaction sources as this
