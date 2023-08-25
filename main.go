@@ -27,7 +27,38 @@ type config struct {
 	intervalCount int
 	logMissing    bool
 	logFile       string
-	tailWindow    time.Duration
+	sink          string
+
+	clickhouseEndpoint string
+	clickhouseUser     string
+	clickhousePassword string
+	clickhouseDB       string
+}
+
+func (c *config) validate() error {
+	if c.sink != "none" && c.sink != "stdout" && c.sink != "clickhouse" && c.sink != "svg" {
+		return fmt.Errorf("invalid sink: %s", c.sink)
+	}
+
+	if c.sink == "clickhouse" {
+		if c.clickhouseEndpoint == "" {
+			return fmt.Errorf("clickhouse endpoint is required")
+		}
+
+		if c.clickhouseUser == "" {
+			return fmt.Errorf("clickhouse user is required")
+		}
+
+		if c.clickhousePassword == "" {
+			return fmt.Errorf("clickhouse password is required")
+		}
+
+		if c.clickhouseDB == "" {
+			return fmt.Errorf("clickhouse database is required")
+		}
+	}
+
+	return nil
 }
 
 type TransactionSource interface {
@@ -58,12 +89,6 @@ func main() {
 						Usage:       "Log transactions that are missing from the other stream",
 						Value:       true,
 						Destination: &config.logMissing,
-					},
-					&cli.DurationFlag{
-						Name:        "tail-window",
-						Usage:       "Duration of the tail window to wait for transactions after an interval ends",
-						Value:       200 * time.Millisecond,
-						Destination: &config.tailWindow,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -125,6 +150,33 @@ func main() {
 				Usage:       "File to save detailed logs",
 				Destination: &config.logFile,
 			},
+			&cli.StringFlag{
+				Name:        "sink",
+				Usage:       "Output sink. Options: 'clickhouse', 'svg', 'stdout', 'none'. Default: 'none'",
+				Value:       "none",
+				Destination: &config.sink,
+			},
+			&cli.StringFlag{
+				Name:        "clickhouse-endpoint",
+				Usage:       "Clickhouse endpoint",
+				Destination: &config.clickhouseEndpoint,
+			},
+			&cli.StringFlag{
+				Name:        "clickhouse-user",
+				Usage:       "Clickhouse user",
+				Value:       "default",
+				Destination: &config.clickhouseUser,
+			},
+			&cli.StringFlag{
+				Name:        "clickhouse-password",
+				Usage:       "Clickhouse password",
+				Destination: &config.clickhousePassword,
+			},
+			&cli.StringFlag{
+				Name:        "clickhouse-db",
+				Usage:       "Clickhouse database",
+				Destination: &config.clickhouseDB,
+			},
 		},
 	}
 
@@ -164,6 +216,11 @@ func runTransactionBenchmark(config *config) error {
 	// - At the end of the interval, we print the stats and save the result
 	// - At the end of the benchmark, we print the overall stats
 	logger := NewLogger("benchmark")
+
+	if err := config.validate(); err != nil {
+		logger.Fatal().Err(err).Msg("Invalid config")
+	}
+
 	var writer *csv.Writer
 	if config.logFile != "" {
 		f, err := os.Create(config.logFile)
@@ -209,6 +266,7 @@ func runTransactionBenchmark(config *config) error {
 func (b *TransactionBenchmarker) Run() {
 	for i := 0; i < b.config.intervalCount; i++ {
 		b.logger.Info().Int("interval", i+1).Msg("Running benchmark interval")
+		fmt.Println()
 		b.runInterval()
 	}
 }
@@ -221,9 +279,6 @@ func (b *TransactionBenchmarker) runInterval() {
 		otherMap = make(map[common.Hash]int64)
 		truthMap = make(map[common.Hash]struct{})
 
-		// Keep track of whether we're in the tail window
-		inTailWindow = false
-
 		fiberStream   = b.fiberSource.SubscribeTransactionObservations()
 		otherStream   = b.otherSource.SubscribeTransactionObservations()
 		payloadStream = b.fiberSource.SubscribeExecutionPayloads()
@@ -233,31 +288,25 @@ func (b *TransactionBenchmarker) runInterval() {
 	timer := time.NewTimer(b.config.interval)
 	end := time.Now().Add(b.config.interval)
 
-	fmt.Println()
+	b.logger.Info().Int("fiber", len(fiberStream)).Int("other", len(otherStream)).Msg("Buffered observations")
 
 loop:
 	for {
 		select {
 		case <-timer.C:
-			// TODO: handle tail window
-			inTailWindow = true
 			break loop
 		case fiberObs := <-fiberStream:
 			// If we're not in the tail window, continue as usual
-			if !inTailWindow {
-				if _, ok := fiberMap[fiberObs.Hash]; !ok {
-					fiberMap[fiberObs.Hash] = fiberObs.Timestamp
-				} else {
-					b.logger.Warn().Str("hash", fiberObs.Hash.Hex()).Str("source", "fiber").Msg("Duplicate hash during interval")
-				}
+			if _, ok := fiberMap[fiberObs.Hash]; !ok {
+				fiberMap[fiberObs.Hash] = fiberObs.Timestamp
+			} else {
+				b.logger.Warn().Str("hash", fiberObs.Hash.Hex()).Str("source", "fiber").Msg("Duplicate hash during interval")
 			}
 		case otherObs := <-otherStream:
-			if !inTailWindow {
-				if _, ok := otherMap[otherObs.Hash]; !ok {
-					otherMap[otherObs.Hash] = otherObs.Timestamp
-				} else {
-					b.logger.Warn().Str("hash", otherObs.Hash.Hex()).Str("source", b.otherSourceName).Msg("Duplicate hash during interval")
-				}
+			if _, ok := otherMap[otherObs.Hash]; !ok {
+				otherMap[otherObs.Hash] = otherObs.Timestamp
+			} else {
+				b.logger.Warn().Str("hash", otherObs.Hash.Hex()).Str("source", b.otherSourceName).Msg("Duplicate hash during interval")
 			}
 		case payload := <-payloadStream:
 			if b.config.crossCheck {
@@ -376,233 +425,3 @@ func (b *TransactionBenchmarker) printStats(differences []float64) {
 	wonRatio := fiberWon / (fiberWon + blxrWon)
 	b.logger.Info().Msg(fmt.Sprintf("Fiber won: %.2f%%", wonRatio*100))
 }
-
-// type BlxrBlock struct {
-// 	Params struct {
-// 		Result struct {
-// 			Hash         common.Hash
-// 			Header       any
-// 			Transactions []any
-// 		}
-// 	}
-// }
-
-// func runBloxrouteBlocks(ctx context.Context, endpoint, key string) error {
-// 	dialer := websocket.DefaultDialer
-// 	sub, _, err := dialer.Dial(endpoint, http.Header{"Authorization": []string{key}})
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	subReq := `{"id": 1, "method": "subscribe", "params": ["bdnBlocks", {"include": ["hash", "header", "transactions"]}]}`
-
-// 	err = sub.WriteMessage(websocket.TextMessage, []byte(subReq))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-// 		var decoded BlxrBlock
-// 		_, msg, err := sub.ReadMessage()
-// 		if err != nil {
-// 			log.Println(err)
-// 		}
-
-// 		ts := time.Now().UnixMilli()
-
-// 		json.Unmarshal(msg, &decoded)
-// 		hash := decoded.Params.Result.Hash
-
-// 		fmt.Printf("[%d] [Bloxroute] New block: %s (%d)\n", ts, hash, len(decoded.Params.Result.Transactions))
-
-// 		if _, ok := blxrMap[hash]; !ok {
-// 			blxrMap[hash] = ts
-// 		}
-// 	}
-// }
-
-// func runFiber(ctx context.Context, endpoint, key string) error {
-// 	c := fiber.NewClient(endpoint, key)
-
-// 	if err := c.Connect(ctx); err != nil {
-// 		return err
-// 	}
-// 	defer c.Close()
-// 	fmt.Println("Fiber connected")
-
-// 	sub := make(chan *fiber.Transaction)
-
-// 	go c.SubscribeNewTxs(nil, sub)
-
-// 	for tx := range sub {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-
-// 		if _, ok := fiberMap[tx.Hash]; !ok {
-// 			fiberMap[tx.Hash] = time.Now().UnixMilli()
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-// func runFiberBlocks(ctx context.Context, endpoint, key string) error {
-// 	c := fiber.NewClient(endpoint, key)
-
-// 	if err := c.Connect(ctx); err != nil {
-// 		return err
-// 	}
-// 	defer c.Close()
-// 	fmt.Println("Fiber connected")
-
-// 	sub := make(chan *fiber.ExecutionPayload)
-
-// 	go c.SubscribeNewExecutionPayloads(sub)
-
-// 	for tx := range sub {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-
-// 		ts := time.Now().UnixMilli()
-// 		lastTs = ts
-
-// 		fmt.Printf("[%d] [Fiber] New block: %s (%d)\n", ts, tx.Header.Hash, len(tx.Transactions))
-
-// 		if _, ok := fiberMap[tx.Header.Hash]; !ok {
-// 			fiberMap[tx.Header.Hash] = ts
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-// func runFiberBeaconBlocks(ctx context.Context, endpoint, key string) error {
-// 	c := fiber.NewClient(endpoint, key)
-
-// 	if err := c.Connect(ctx); err != nil {
-// 		return err
-// 	}
-// 	defer c.Close()
-// 	fmt.Println("Fiber connected")
-
-// 	sub := make(chan *fiber.BeaconBlock)
-
-// 	go c.SubscribeNewBeaconBlocks(sub)
-
-// 	for block := range sub {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-
-// 		ts := time.Now().UnixMilli()
-// 		lastTs = ts
-
-// 		slot := big.NewInt(int64(block.Slot))
-
-// 		fmt.Printf("[%d] [Fiber] New beacon block: %s\n", ts, block.StateRoot)
-
-// 		hash := common.BigToHash(slot)
-// 		if _, ok := fiberMap[hash]; !ok {
-// 			fiberMap[hash] = ts
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-// type BeaconHead struct {
-// 	Slot  string
-// 	Block string
-// }
-
-// func runBeaconBlocks(ctx context.Context, endpoint string) error {
-// 	req, err := http.NewRequest("GET", endpoint+"/eth/v1/events?topics=block", nil)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	req.Header.Set("Cache-Control", "no-cache")
-// 	req.Header.Set("Accept", "text/event-stream")
-// 	req.Header.Set("Connection", "keep-alive")
-
-// 	client := &http.Client{}
-// 	resp, err := client.Do(req)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-
-// 		data := make([]byte, 1024)
-// 		var bh BeaconHead
-// 		_, err := resp.Body.Read(data)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		ts := time.Now().UnixMilli()
-
-// 		fmt.Println("Diff:", ts-lastTs)
-
-// 		data = bytes.Trim(data[17:], "\x00")
-// 		if err := json.Unmarshal(data, &bh); err != nil {
-// 			fmt.Println("Error unmarshalling beacon head:", err)
-// 			continue
-// 		}
-
-// 		slot, _ := new(big.Int).SetString(bh.Slot, 10)
-
-// 		hash := common.BigToHash(slot)
-
-// 		fmt.Printf("[%d] [Beacon] New block: %s\n", ts, bh.Block)
-// 		if _, ok := beaconMap[hash]; !ok {
-// 			beaconMap[hash] = ts
-// 		}
-// 	}
-// }
-
-// func runFiber2(ctx context.Context, endpoint, key string) error {
-// 	c := fiber.NewClient(endpoint, key)
-
-// 	if err := c.Connect(ctx); err != nil {
-// 		return err
-// 	}
-// 	defer c.Close()
-// 	fmt.Println("Fiber connected")
-
-// 	sub := make(chan *fiber.Transaction)
-
-// 	go c.SubscribeNewTxs(nil, sub)
-
-// 	for tx := range sub {
-// 		select {
-// 		case <-ctx.Done():
-// 			return nil
-// 		default:
-// 		}
-
-// 		if _, ok := fiberMap2[tx.Hash]; !ok {
-// 			fiberMap2[tx.Hash] = time.Now().UnixMilli()
-// 		}
-// 	}
-
-// 	return nil
-// }
