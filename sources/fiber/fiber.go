@@ -18,6 +18,7 @@ type FiberSource struct {
 func NewFiberSource(endpoint, apiKey string) *FiberSource {
 	return &FiberSource{
 		client: fiber.NewClient(endpoint, apiKey),
+		done:   make(chan struct{}),
 	}
 }
 
