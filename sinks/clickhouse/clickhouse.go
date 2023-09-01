@@ -171,7 +171,7 @@ func (c *ClickhouseSink) Flush() error {
 	var err error
 	start := time.Now()
 
-	c.log.Debug().Int("batch_size", c.observationRowBatch.Rows()).Msg("Flushing batches...")
+	c.log.Debug().Msg("Flushing batches...")
 	var wg sync.WaitGroup
 	wg.Add(2)
 
