@@ -238,8 +238,6 @@ func setupSink(config *config, ty sinks.InitType) (Sink, error) {
 }
 
 func buildBlockObservationStats(differences []float64) (types.ObservationStatsRow, error) {
-	empty := types.ObservationStatsRow{}
-
 	fiberWon := float64(0)
 	blxrWon := float64(0)
 
@@ -251,45 +249,14 @@ func buildBlockObservationStats(differences []float64) (types.ObservationStatsRo
 		}
 	}
 	// Calculate all stats
-	mean, err := stats.Mean(differences)
-	if err != nil {
-		return empty, fmt.Errorf("mean: %w", err)
-	}
-
-	min, err := stats.Min(differences)
-	if err != nil {
-		return empty, fmt.Errorf("min: %w", err)
-	}
-
-	max, err := stats.Max(differences)
-	if err != nil {
-		return empty, fmt.Errorf("max: %w", err)
-	}
-
-	p5, err := stats.Percentile(differences, 5)
-	if err != nil {
-		return empty, fmt.Errorf("p5: %w", err)
-	}
-
-	p25, err := stats.Percentile(differences, 25)
-	if err != nil {
-		return empty, fmt.Errorf("p25: %w", err)
-	}
-
-	p50, err := stats.Percentile(differences, 50)
-	if err != nil {
-		return empty, err
-	}
-
-	p75, err := stats.Percentile(differences, 75)
-	if err != nil {
-		return empty, err
-	}
-
-	p95, err := stats.Percentile(differences, 95)
-	if err != nil {
-		return empty, err
-	}
+	mean, _ := stats.Mean(differences)
+	min, _ := stats.Min(differences)
+	max, _ := stats.Max(differences)
+	p5, _ := stats.Percentile(differences, 5)
+	p25, _ := stats.Percentile(differences, 25)
+	p50, _ := stats.Percentile(differences, 50)
+	p75, _ := stats.Percentile(differences, 75)
+	p95, _ := stats.Percentile(differences, 95)
 
 	return types.ObservationStatsRow{
 		Mean:     mean,
@@ -301,7 +268,7 @@ func buildBlockObservationStats(differences []float64) (types.ObservationStatsRo
 		Min:      min,
 		Max:      max,
 		FiberWon: fiberWon / (fiberWon + blxrWon),
-	}, err
+	}, nil
 
 }
 
