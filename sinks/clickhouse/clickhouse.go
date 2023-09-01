@@ -32,6 +32,8 @@ type ClickhouseSink struct {
 	observationRowBatch driver.Batch
 	statsBatch          driver.Batch
 
+	ty sinks.InitType
+
 	blockObservationRowBatch driver.Batch
 	blockStatsBatch          driver.Batch
 }
@@ -68,6 +70,8 @@ func NewClickhouseClient(cfg *ClickhouseConfig) (*ClickhouseSink, error) {
 // Init creates the database and tables if they don't exist, and also prepares the batch statements
 func (c *ClickhouseSink) Init(ty sinks.InitType) error {
 	var err error
+
+	c.ty = ty
 
 	c.log.Info().Str("endpoint", c.cfg.Endpoint).Str("type", string(ty)).Msg("Setting up Clickhouse database")
 	if err := c.chConn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", c.cfg.DB)); err != nil {
@@ -171,61 +175,120 @@ func (c *ClickhouseSink) Flush() error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go func() {
-		defer wg.Done()
-		// Infinite retries for now
-		for {
-			if c.observationRowBatch.IsSent() {
-				break
+	switch c.ty {
+	case sinks.Transactions:
+		go func() {
+			defer wg.Done()
+			// Infinite retries for now
+			for {
+				if c.observationRowBatch.IsSent() {
+					break
+				}
+
+				if err := c.observationRowBatch.Send(); err != nil {
+					c.log.Error().Err(err).Msg("sending observation batch failed, retrying...")
+				} else {
+					break
+				}
 			}
 
-			if err := c.observationRowBatch.Send(); err != nil {
-				c.log.Error().Err(err).Msg("sending observation batch failed, retrying...")
-			} else {
-				break
+			c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted observation batch")
+
+			// Reset batch
+			for {
+				c.observationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_observations", c.cfg.DB))
+				if err != nil {
+					c.log.Error().Err(err).Msg("preparing batch failed, retrying")
+				} else {
+					break
+				}
 			}
-		}
+		}()
 
-		c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted observation batch")
+		go func() {
+			defer wg.Done()
+			// Infinite retries for now
+			for {
+				if c.statsBatch.IsSent() {
+					break
+				}
 
-		// Reset batch
-		for {
-			c.observationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_observations", c.cfg.DB))
-			if err != nil {
-				c.log.Error().Err(err).Msg("preparing batch failed, retrying")
-			} else {
-				break
-			}
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		// Infinite retries for now
-		for {
-			if c.statsBatch.IsSent() {
-				break
+				if err := c.statsBatch.Send(); err != nil {
+					c.log.Error().Err(err).Msg("sending stats batch failed, retrying...")
+				} else {
+					break
+				}
 			}
 
-			if err := c.statsBatch.Send(); err != nil {
-				c.log.Error().Err(err).Msg("sending stats batch failed, retrying...")
-			} else {
-				break
-			}
-		}
+			c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted stats batch")
 
-		c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted stats batch")
-
-		// Reset batch
-		for {
-			c.statsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.observation_stats", c.cfg.DB))
-			if err != nil {
-				c.log.Error().Err(err).Msg("preparing batch failed, retrying")
-			} else {
-				break
+			// Reset batch
+			for {
+				c.statsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.observation_stats", c.cfg.DB))
+				if err != nil {
+					c.log.Error().Err(err).Msg("preparing batch failed, retrying")
+				} else {
+					break
+				}
 			}
-		}
-	}()
+		}()
+	case sinks.Blocks:
+		go func() {
+			defer wg.Done()
+			// Infinite retries for now
+			for {
+				if c.blockObservationRowBatch.IsSent() {
+					break
+				}
+
+				if err := c.blockObservationRowBatch.Send(); err != nil {
+					c.log.Error().Err(err).Msg("sending observation batch failed, retrying...")
+				} else {
+					break
+				}
+			}
+
+			c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted observation batch")
+
+			// Reset batch
+			for {
+				c.blockObservationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_block_observations", c.cfg.DB))
+				if err != nil {
+					c.log.Error().Err(err).Msg("preparing batch failed, retrying")
+				} else {
+					break
+				}
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			// Infinite retries for now
+			for {
+				if c.blockStatsBatch.IsSent() {
+					break
+				}
+
+				if err := c.blockStatsBatch.Send(); err != nil {
+					c.log.Error().Err(err).Msg("sending stats batch failed, retrying...")
+				} else {
+					break
+				}
+			}
+
+			c.log.Debug().Str("took", time.Since(start).String()).Msg("Inserted stats batch")
+
+			// Reset batch
+			for {
+				c.blockStatsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.block_observation_stats", c.cfg.DB))
+				if err != nil {
+					c.log.Error().Err(err).Msg("preparing batch failed, retrying")
+				} else {
+					break
+				}
+			}
+		}()
+	}
 
 	wg.Wait()
 	c.log.Debug().Msg("Succesfully flushed batches")
