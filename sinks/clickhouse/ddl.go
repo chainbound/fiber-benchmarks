@@ -18,12 +18,12 @@ PRIMARY KEY (tx_hash, difference)`, db)
 
 func ConfirmedBlockObservationsDDL(db string) string {
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.confirmed_block_observations (
-    tx_hash String,
+    block_hash String,
     fiber_timestamp Int64,
     other_timestamp Int64,
     difference Int64,
 	benchmark_id String,
-	TransactionsLen Int64
+	transactions_len Int64
 ) ENGINE = MergeTree()
 PRIMARY KEY (tx_hash, difference)`, db)
 }
