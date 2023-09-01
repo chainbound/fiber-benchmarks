@@ -25,7 +25,7 @@ func ConfirmedBlockObservationsDDL(db string) string {
 	benchmark_id String,
 	transactions_len Int64
 ) ENGINE = MergeTree()
-PRIMARY KEY (tx_hash, difference)`, db)
+PRIMARY KEY (block_hash, difference)`, db)
 }
 
 func ObservationStatsDDL(db string) string {
