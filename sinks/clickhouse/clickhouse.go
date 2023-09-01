@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/chainbound/fiber-benchmarks/log"
+	"github.com/chainbound/fiber-benchmarks/sinks"
 	"github.com/chainbound/fiber-benchmarks/types"
 )
 
@@ -20,6 +21,19 @@ type ClickhouseConfig struct {
 	DB       string
 	Username string
 	Password string
+}
+
+type ClickhouseSink struct {
+	cfg    *ClickhouseConfig
+	chConn driver.Conn
+	log    zerolog.Logger
+
+	// Batching of rows
+	observationRowBatch driver.Batch
+	statsBatch          driver.Batch
+
+	blockObservationRowBatch driver.Batch
+	blockStatsBatch          driver.Batch
 }
 
 func NewClickhouseClient(cfg *ClickhouseConfig) (*ClickhouseSink, error) {
@@ -52,57 +66,78 @@ func NewClickhouseClient(cfg *ClickhouseConfig) (*ClickhouseSink, error) {
 }
 
 // Init creates the database and tables if they don't exist, and also prepares the batch statements
-func (c *ClickhouseSink) Init() error {
+func (c *ClickhouseSink) Init(ty sinks.InitType) error {
 	var err error
 
-	c.log.Info().Str("endpoint", c.cfg.Endpoint).Msg("Setting up Clickhouse database")
+	c.log.Info().Str("endpoint", c.cfg.Endpoint).Str("type", string(ty)).Msg("Setting up Clickhouse database")
 	if err := c.chConn.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", c.cfg.DB)); err != nil {
 		return err
 	}
 
 	c.log.Info().Str("db", c.cfg.DB).Msg("Database created")
 
-	if err := c.chConn.Exec(context.Background(), ConfirmedObservationsDDL(c.cfg.DB)); err != nil {
-		return err
-	}
+	switch ty {
+	case sinks.Transactions:
+		if err := c.chConn.Exec(context.Background(), ConfirmedObservationsDDL(c.cfg.DB)); err != nil {
+			return err
+		}
 
-	if err := c.chConn.Exec(context.Background(), ObservationStatsDDL(c.cfg.DB)); err != nil {
-		return err
-	}
+		if err := c.chConn.Exec(context.Background(), ObservationStatsDDL(c.cfg.DB)); err != nil {
+			return err
+		}
 
-	c.log.Info().Msg("Tables created")
+		c.log.Info().Msg("Tables created")
 
-	for {
-		c.observationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_observations", c.cfg.DB))
-		if err != nil {
-			c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
-		} else {
-			break
+		for {
+			c.observationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_observations", c.cfg.DB))
+			if err != nil {
+				c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
+			} else {
+				break
+			}
+		}
+
+		for {
+			c.statsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.observation_stats", c.cfg.DB))
+			if err != nil {
+				c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
+			} else {
+				break
+			}
+		}
+
+		c.log.Info().Msg("Prepared batches")
+	case sinks.Blocks:
+		if err := c.chConn.Exec(context.Background(), ConfirmedBlockObservationsDDL(c.cfg.DB)); err != nil {
+			return err
+		}
+
+		if err := c.chConn.Exec(context.Background(), BlockObservationStatsDDL(c.cfg.DB)); err != nil {
+			return err
+		}
+
+		c.log.Info().Msg("Tables created")
+
+		for {
+			c.blockObservationRowBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.confirmed_block_observations", c.cfg.DB))
+			if err != nil {
+				c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
+			} else {
+				break
+			}
+		}
+
+		for {
+			c.blockStatsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.block_observation_stats", c.cfg.DB))
+			if err != nil {
+				c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
+			} else {
+				break
+			}
 		}
 	}
-
-	for {
-		c.statsBatch, err = c.chConn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s.observation_stats", c.cfg.DB))
-		if err != nil {
-			c.log.Error().Err(err).Msg("preparing batch failed, retrying...")
-		} else {
-			break
-		}
-	}
-
-	c.log.Info().Msg("Prepared batches")
 
 	return nil
-}
-
-type ClickhouseSink struct {
-	cfg    *ClickhouseConfig
-	chConn driver.Conn
-	log    zerolog.Logger
-
-	// Batching of rows
-	observationRowBatch driver.Batch
-	statsBatch          driver.Batch
 }
 
 func (c *ClickhouseSink) Close() error {
@@ -114,8 +149,17 @@ func (c *ClickhouseSink) RecordObservationRow(row *types.ConfirmedObservationRow
 	return c.observationRowBatch.AppendStruct(row)
 }
 
+// These rows will be added to a batch. To flush the batch, call Flush()
+func (c *ClickhouseSink) RecordBlockObservationRow(row *types.BlockObservationRow) error {
+	return c.blockObservationRowBatch.AppendStruct(row)
+}
+
 func (c *ClickhouseSink) RecordStats(stats *types.ObservationStatsRow) error {
 	return c.statsBatch.AppendStruct(stats)
+}
+
+func (c *ClickhouseSink) RecordBlockStats(stats *types.ObservationStatsRow) error {
+	return c.blockStatsBatch.AppendStruct(stats)
 }
 
 // Flushes the batches concurrently. This is a blocking call that can take a while.

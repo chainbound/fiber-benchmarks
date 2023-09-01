@@ -21,6 +21,15 @@ type ConfirmedObservationRow struct {
 	CallDataSize   int64  `ch:"calldata_size"`
 }
 
+type BlockObservationRow struct {
+	BlockHash       string `ch:"block_hash"`
+	FiberTimestamp  int64  `ch:"fiber_timestamp"`
+	OtherTimestamp  int64  `ch:"other_timestamp"`
+	Difference      int64  `ch:"difference"`
+	BenchmarkID     string `ch:"benchmark_id"`
+	TransactionsLen int64  `ch:"transactions_len"`
+}
+
 type ObservationStatsRow struct {
 	StartTime   time.Time `ch:"start_time"`
 	EndTime     time.Time `ch:"end_time"`
@@ -60,6 +69,15 @@ type Observation struct {
 	From         string
 	To           string
 	CallDataSize int64
+}
+
+type BlockObservation struct {
+	// Hash
+	Hash common.Hash
+	// Timestamp in microseconds
+	Timestamp int64
+	// Number of transactions in the block
+	TransactionsLen int
 }
 
 // Use a buffer here because we don't want to block transaction sources as this

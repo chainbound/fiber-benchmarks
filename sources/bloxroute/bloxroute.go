@@ -178,6 +178,29 @@ func (b *BloxrouteSource) SubscribeExecutionPayloads() (chan *Block, error) {
 	return ch, nil
 }
 
+func (b *BloxrouteSource) SubscribeBlockObservations() chan types.BlockObservation {
+	hashCh := make(chan types.BlockObservation, 16)
+
+	ch, err := b.SubscribeExecutionPayloads()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		for block := range ch {
+			hashCh <- types.BlockObservation{
+				Hash:            block.Hash,
+				Timestamp:       time.Now().UnixMicro(),
+				TransactionsLen: len(block.Transactions),
+			}
+		}
+
+		close(hashCh)
+	}()
+
+	return hashCh
+}
+
 // Closes the WebSocket connection and all open subscriptions
 func (b *BloxrouteSource) Close() {
 	close(b.done)

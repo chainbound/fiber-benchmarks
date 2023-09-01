@@ -66,6 +66,8 @@ func (f *FiberSource) SubscribeTransactionObservations() chan types.Observation 
 				To:           tx.To.Hex(),
 			}
 		}
+
+		close(hashCh)
 	}()
 
 	return hashCh
@@ -88,6 +90,27 @@ func (f *FiberSource) SubscribeExecutionPayloads() chan *fiber.ExecutionPayload 
 	}()
 
 	return ch
+}
+
+func (f *FiberSource) SubscribeBlockObservations() chan types.BlockObservation {
+	obsCh := make(chan types.BlockObservation, 16)
+
+	go func() {
+		ch := f.SubscribeExecutionPayloads()
+
+		for block := range ch {
+			obsCh <- types.BlockObservation{
+				Hash:            block.Header.Hash,
+				Timestamp:       time.Now().UnixMicro(),
+				TransactionsLen: len(block.Transactions),
+			}
+		}
+
+		close(obsCh)
+
+	}()
+
+	return obsCh
 }
 
 func (f *FiberSource) Close() error {
