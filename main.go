@@ -24,10 +24,11 @@ type Sink interface {
 }
 
 type config struct {
-	fiberEndpoint string
-	fiberKey      string
-	blxrEndpoint  string
-	blxrKey       string
+	fiberEndpoints []string
+	endpointSlice  cli.StringSlice
+	fiberKey       string
+	blxrEndpoint   string
+	blxrKey        string
 
 	crossCheck    bool
 	interval      time.Duration
@@ -44,6 +45,8 @@ func (c *config) validate() error {
 	if c.sink != "none" && c.sink != "stdout" && c.sink != "clickhouse" && c.sink != "csv" {
 		return fmt.Errorf("invalid sink: %s", c.sink)
 	}
+
+	c.fiberEndpoints = append(c.fiberEndpoints, c.endpointSlice.Value()...)
 
 	if c.sink == "clickhouse" {
 		if c.clickhouse.Endpoint == "" {
@@ -132,10 +135,10 @@ func main() {
 				Required:    true,
 				Destination: &config.benchmarkID,
 			},
-			&cli.StringFlag{
+			&cli.StringSliceFlag{
 				Name:        "fiber-endpoint",
-				Usage:       "Fiber API endpoint",
-				Destination: &config.fiberEndpoint,
+				Usage:       "Fiber API endpoints. If multiple are provided, the client multiplexer will be used.",
+				Destination: &config.endpointSlice,
 				Required:    true,
 			},
 			&cli.StringFlag{

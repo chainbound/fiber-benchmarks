@@ -35,7 +35,7 @@ func runBlockBenchmark(config *config) error {
 		logger.Fatal().Err(err).Msg("Invalid config")
 	}
 
-	fiberSource := fiber.NewFiberSource(config.fiberEndpoint, config.fiberKey)
+	fiberSource := fiber.NewFiberSource(config.fiberEndpoints, config.fiberKey)
 	if err := fiberSource.Connect(); err != nil {
 		return err
 	}

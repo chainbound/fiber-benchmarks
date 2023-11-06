@@ -6,16 +6,30 @@ import (
 
 	"github.com/chainbound/fiber-benchmarks/types"
 	fiber "github.com/chainbound/fiber-go"
+	"github.com/chainbound/fiber-go/filter"
 )
 
 type FiberSource struct {
-	client *fiber.Client
+	client FiberInnerSource
 	done   chan struct{}
 }
 
-func NewFiberSource(endpoint, apiKey string) *FiberSource {
+type FiberInnerSource interface {
+	Connect(ctx context.Context) error
+	Close() error
+	SubscribeNewTxs(filter *filter.Filter, ch chan<- *fiber.Transaction) error
+	SubscribeNewExecutionPayloads(ch chan<- *fiber.ExecutionPayload) error
+}
+
+func NewFiberSource(endpoints []string, apiKey string) *FiberSource {
+	var client FiberInnerSource
+	if len(endpoints) > 1 {
+		client = fiber.NewMultiplexClient(endpoints, apiKey)
+	} else {
+		client = fiber.NewClient(endpoints[0], apiKey)
+	}
 	return &FiberSource{
-		client: fiber.NewClient(endpoint, apiKey),
+		client: client,
 		done:   make(chan struct{}),
 	}
 }
