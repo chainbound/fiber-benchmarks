@@ -72,12 +72,17 @@ func (f *FiberSource) SubscribeTransactionObservations() chan types.Observation 
 		ch := f.SubscribeTransactions()
 
 		for tx := range ch {
+			to := ""
+			if tx.To != nil {
+				to = tx.To.Hex()
+			}
+
 			hashCh <- types.Observation{
 				Hash:         tx.Hash,
 				Timestamp:    time.Now().UnixMicro(),
 				CallDataSize: int64(len(tx.Input)),
 				From:         tx.From.Hex(),
-				To:           tx.To.Hex(),
+				To:           to,
 			}
 		}
 
