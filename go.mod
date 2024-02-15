@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.15.0
-	github.com/chainbound/fiber-go v1.9.0
 	github.com/ethereum/go-ethereum v1.13.12
 	github.com/gorilla/websocket v1.5.1
 	github.com/montanaflynn/stats v0.7.1
@@ -18,6 +17,7 @@ require (
 	github.com/attestantio/go-eth2-client v0.19.10 // indirect
 	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
+	github.com/chainbound/fiber-go v1.8.3-0.20240215105050-c30fc880ab3e // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/consensys/gnark-crypto v0.12.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
@@ -28,7 +28,6 @@ require (
 	github.com/ferranbt/fastssz v0.1.3 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.0 // indirect
-	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/goccy/go-yaml v1.11.3 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/uuid v1.4.0 // indirect
