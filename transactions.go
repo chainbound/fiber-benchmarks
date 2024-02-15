@@ -98,7 +98,7 @@ func (b *TransactionBenchmarker) Run() {
 }
 
 // Runs the interval
-func (b *TransactionBenchmarker) runInterval(fiberStream chan types.Observation, otherStream chan types.Observation, payloadStream chan *f.ExecutionPayload) (types.ObservationStatsRow, error) {
+func (b *TransactionBenchmarker) runInterval(fiberStream chan types.Observation, otherStream chan types.Observation, payloadStream chan *f.Block) (types.ObservationStatsRow, error) {
 	// Setup
 	var (
 		fiberMap = make(map[common.Hash]types.Observation)
@@ -133,11 +133,11 @@ loop:
 		case payload := <-payloadStream:
 			if b.config.crossCheck {
 				for _, tx := range payload.Transactions {
-					truthMap[tx.Hash] = struct{}{}
+					truthMap[tx.Hash()] = struct{}{}
 				}
 				if b.config.sink != "clickhouse" {
 					fmt.Printf("\033[1A\033[K")
-					b.logger.Info().Int("block_number", int(payload.Header.Number)).Int("amount_confirmed", len(truthMap)).Str("remaining", time.Until(end).String()).Msg("Recorded execution payload transactions")
+					b.logger.Info().Int("block_number", int(payload.Header.Number.Int64())).Int("amount_confirmed", len(truthMap)).Str("remaining", time.Until(end).String()).Msg("Recorded execution payload transactions")
 				}
 			}
 		}

@@ -17,8 +17,8 @@ type FiberSource struct {
 type FiberInnerSource interface {
 	Connect(ctx context.Context) error
 	Close() error
-	SubscribeNewTxs(filter *filter.Filter, ch chan<- *fiber.Transaction) error
-	SubscribeNewExecutionPayloads(ch chan<- *fiber.ExecutionPayload) error
+	SubscribeNewTxs(filter *filter.Filter, ch chan<- *fiber.TransactionWithSender) error
+	SubscribeNewExecutionPayloads(ch chan<- *fiber.Block) error
 }
 
 func NewFiberSource(endpoints []string, apiKey string) *FiberSource {
@@ -46,8 +46,8 @@ func (f *FiberSource) Connect() error {
 
 // Subscribe to new transactions. This function returns a channel of transactions that will
 // close once `Close` gets called.
-func (f *FiberSource) SubscribeTransactions() chan *fiber.Transaction {
-	ch := make(chan *fiber.Transaction)
+func (f *FiberSource) SubscribeTransactions() chan *fiber.TransactionWithSender {
+	ch := make(chan *fiber.TransactionWithSender)
 
 	go func() {
 		go func() {
@@ -73,15 +73,15 @@ func (f *FiberSource) SubscribeTransactionObservations() chan types.Observation 
 
 		for tx := range ch {
 			to := ""
-			if tx.To != nil {
-				to = tx.To.Hex()
+			if tx.Transaction.To() != nil {
+				to = tx.Transaction.To().Hex()
 			}
 
 			hashCh <- types.Observation{
-				Hash:         tx.Hash,
+				Hash:         tx.Transaction.Hash(),
 				Timestamp:    time.Now().UnixMicro(),
-				CallDataSize: int64(len(tx.Input)),
-				From:         tx.From.Hex(),
+				CallDataSize: int64(len(tx.Transaction.Data())),
+				From:         tx.Sender.Hex(),
 				To:           to,
 			}
 		}
@@ -94,8 +94,8 @@ func (f *FiberSource) SubscribeTransactionObservations() chan types.Observation 
 
 // Subscribe to new execution payloads. This function returns a channel of transactions that will
 // close once `Close` gets called.
-func (f *FiberSource) SubscribeExecutionPayloads() chan *fiber.ExecutionPayload {
-	ch := make(chan *fiber.ExecutionPayload)
+func (f *FiberSource) SubscribeExecutionPayloads() chan *fiber.Block {
+	ch := make(chan *fiber.Block)
 
 	go func() {
 		go func() {
@@ -119,7 +119,7 @@ func (f *FiberSource) SubscribeBlockObservations() chan types.BlockObservation {
 
 		for block := range ch {
 			obsCh <- types.BlockObservation{
-				Hash:            block.Header.Hash,
+				Hash:            block.Header.Hash(),
 				Timestamp:       time.Now().UnixMicro(),
 				TransactionsLen: len(block.Transactions),
 			}
