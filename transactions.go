@@ -36,17 +36,34 @@ func runTransactionBenchmark(config *config) error {
 		logger.Fatal().Err(err).Msg("Invalid config")
 	}
 
-	fiberSource := fiber.NewFiberSource(config.fiberEndpoints, config.fiberKey)
-	if err := fiberSource.Connect(); err != nil {
-		return err
-	}
-
+	var fiberSource *fiber.FiberSource
 	var otherSource TransactionSource
 	var otherSourceName string
 
-	if config.blxrEndpoint != "" && config.blxrKey != "" {
-		otherSource = bloxroute.NewBloxrouteSource(config.blxrEndpoint, config.blxrKey)
-		otherSourceName = "bloxroute"
+	if config.fiberOnly {
+		firstEndpoint := config.fiberEndpoints[0]
+		fiberSource = fiber.NewFiberSource([]string{firstEndpoint}, config.fiberKey)
+		if err := fiberSource.Connect(); err != nil {
+			return err
+		}
+
+		otherSourceName = "fiber-2"
+		secondEndpoint := config.fiberEndpoints[1]
+		otherFiberSource := fiber.NewFiberSource([]string{secondEndpoint}, config.fiberKey)
+		if err := otherFiberSource.Connect(); err != nil {
+			return err
+		}
+		otherSource = otherFiberSource
+	} else {
+		fiberSource = fiber.NewFiberSource(config.fiberEndpoints, config.fiberKey)
+		if err := fiberSource.Connect(); err != nil {
+			return err
+		}
+
+		if config.blxrEndpoint != "" && config.blxrKey != "" {
+			otherSource = bloxroute.NewBloxrouteSource(config.blxrEndpoint, config.blxrKey)
+			otherSourceName = "bloxroute"
+		}
 	}
 
 	sink, err := setupSink(config, sinks.Transactions)
