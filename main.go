@@ -37,6 +37,7 @@ type config struct {
 	logFile       string
 	sink          string
 	benchmarkID   string
+	fiberOnly     bool
 
 	clickhouse clickhouse.ClickhouseConfig
 }
@@ -175,6 +176,12 @@ func main() {
 				Name:        "log-file",
 				Usage:       "File to save detailed logs in case of file sink",
 				Destination: &config.logFile,
+			},
+			&cli.BoolFlag{
+				Name:        "fiber-only",
+				Usage:       "Benchmark two separate Fiber endpoints between each other",
+				Value:       false,
+				Destination: &config.fiberOnly,
 			},
 			&cli.StringFlag{
 				Name:        "sink",
