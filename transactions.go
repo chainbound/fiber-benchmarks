@@ -53,6 +53,9 @@ func runTransactionBenchmark(config *config) error {
 		if err := otherFiberSource.Connect(); err != nil {
 			return err
 		}
+
+		logger.Info().Str("fiber-1", firstEndpoint).Str("fiber-2", secondEndpoint).Msg("Running fiber-only benchmark")
+
 		otherSource = otherFiberSource
 	} else {
 		fiberSource = fiber.NewFiberSource(config.fiberEndpoints, config.fiberKey)
