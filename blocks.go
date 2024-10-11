@@ -115,6 +115,7 @@ loop:
 		case fiberObs := <-fiberStream:
 			// If we're not in the tail window, continue as usual
 			if _, ok := fiberMap[fiberObs.Hash]; !ok {
+				b.logger.Info().Str("hash", fiberObs.Hash.Hex()).Msg("New Fiber block")
 				fiberMap[fiberObs.Hash] = fiberObs
 			} else {
 				b.logger.Warn().Str("hash", fiberObs.Hash.Hex()).Str("source", "fiber").Msg("Duplicate hash during interval")
@@ -122,6 +123,7 @@ loop:
 		case otherObs := <-otherStream:
 			if _, ok := otherMap[otherObs.Hash]; !ok {
 				otherMap[otherObs.Hash] = otherObs
+				b.logger.Info().Str("hash", otherObs.Hash.Hex()).Msg("New Bloxroute block")
 			} else {
 				b.logger.Warn().Str("hash", otherObs.Hash.Hex()).Str("source", b.otherSourceName).Msg("Duplicate hash during interval")
 			}

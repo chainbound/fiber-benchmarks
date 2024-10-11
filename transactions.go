@@ -105,9 +105,11 @@ func (b *TransactionBenchmarker) Run() {
 		stats.StartTime = start
 		stats.EndTime = end
 		stats.BenchmarkID = b.config.benchmarkID
-		b.sink.RecordStats(&stats)
-		if err := b.sink.Flush(); err != nil {
-			b.logger.Error().Err(err).Msg("Failed to flush sink")
+		if b.sink != nil {
+			b.sink.RecordStats(&stats)
+			if err := b.sink.Flush(); err != nil {
+				b.logger.Error().Err(err).Msg("Failed to flush sink")
+			}
 		}
 	}
 
